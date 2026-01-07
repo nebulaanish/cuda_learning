@@ -1,0 +1,182 @@
+# Day 1
+
+Cuda Computing:
+Solves problems in parallel to increase the speed of computation. <br>
+- Use cases: 
+    - Ray tracing
+    - Video processing
+    - Optmize matrix multiplication in Neural Networks.
+
+
+- Memory bandwidth is the major bottleneck. But why??? (we'll figure it out later).
+- Tried Installing cuda, version mismatch between nvidia driver's cuda dependency and installed cuda version. Tried installing cuda12.9 to match nvidia driver. 
+- Tried running hello world cuda c++ program on google colab. (Worked)
+- Process: <br>
+    1. Code in `hello.cu` file.
+    2. Run following command in code block while selecting a GPU Runtime(T4 GPU) in free tier.
+        ```
+        !nvcc -arch=sm_75 hello.cu -o hello
+        !./hello
+        ```
+
+# Day 2
+
+
+- Successfully installed resolved cuda installation issues in local setup. 
+
+## Cuda Programming model. 
+https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html#heterogeneous-systems
+
+
+**Device Code**: Code that executes on GPU. 
+- Kernel: The function that is invoked for execution in GPU. 
+- Launching the kernel: Act of starting a kernel 
+
+- Similar to launching multiple threads in CPU, is launching kernel in GPU. 
+
+- A GPU -> Collection of GPC(Graphics Processing Cluster)s connected to the GPU memory - Collection of SM(Streaming Multiprocessors) -> 
+
+- A kernel execution spawns millions of threads. Threads are organized into blocks called thread blocks which are organized in grid. 
+
+- Threads within a thread block all have access to the on-chip shared memory, which can be used for exchanging information between threads of a thread block.
+- Cuda programming requires that it is possible to execute thread blocks in any order, in parallel or series.
+
+- Thread Block Clusters(Optional Grouping):  Are a group of thread blocks, which together form a grid. 
+Can be laid out in 1,2,3 dimensions similar to thread block and grid. 
+
+- Same cluster, processed simulataneously in different SMs within the same GPC. 
+
+## Warps and SIMT
+The threads in a thread block are organized into a group of 32 threads called warps. 
+A warp executes the kernel in SIMT (Single Instruction Multiple Threads) paradigm. 
+
+All threads in the warp execute the same instruction simultaneously. If threads within a warp, don't follow a control flow branch in execution, they are masked off
+while others are executed. 
+
+
+Thread blocks are best specified to be in multiples of 32. Otherwise, the final warp will have some lanes unused for most of execution resulting in sub-optimal functional unit utilization. 
+
+SIMT(Single Instruction Multiple Threads) is often compared with SIMD(Single Instruction Multiple Data) model of parallelism. 
+
+
+!! Understanding warp execution model is helpful in understanding: Global Memory Coalescing and Share Memory Bank Access Patterns
+
+
+
+## GPU Memory and DRAM in heterogeneous systems. 
+DRAM attached to GPU is called global memory as it's accessible to all SMs. 
+DRAM atached to CPU is called system or host memory. 
+
+- heterogeneous systems use virutal memory addressing. Both CPU and GPU use a single unified memory space. So given a memory address, it's 
+possible to determine which GPU or CPU the address is associated with. 
+
+
+## On-Chip Memory in GPUS
+- In addition to global memory, each SM has their own register file, shared memory and L1 cache.  
+- Quick access to threads on same SM but inaccesssible to other threads. 
+- Register allocation is per thread, while shared memory is common to each thread block. 
+
+## Caches
+- Each SM has their own L1 cache
+- A larger L2 cache is shared by all SMs in a GPU. 
+
+
+## Unified Memory
+- Allocated memory is accessible to that device only. 
+- By using unified memory, CUDA relocates or enables access. 
+- Even with unified memory, accessing from memory where it resides provides optimal performance. 
+
+- **CUDA Dynamic Parallelism** => A thread block may be suspended to memory. 
+- **Mapped Memory** => CPU memory allocated with properties that enable direct access from GPU. 
+
+
+
+# Cuda Platform
+PTX(Parallel Thread Execution): High level assembly language for NVIDIA GPUs. 
+NVCC(NVIDIA CUDA Compiler)
+
+
+## Cubins and Fatbins
+- C++ code is compiled to PTX which is then converted to binary code for execution whih is CUDA binary or cubin.  
+- A cubin has specific binary format for a specific SM version eg: sm_120. 
+- GPU code is stored in fatbin. Fatbins contains cubin and PTX for multiple versions of SMs.  
+
+======================================================================
+# Day 3
+
+## Programming GPUs in CUDA
+https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/intro-to-cuda-cpp.html
+
+
+### Kernel 
+- Code is specified using `__global__` declaration specifier. 
+- Kernel Launch is a operation, that starts a kernel running. A kernel has a void return type. 
+
+```
+__global__ void vecAdd(float* A, float* B, float* C){
+
+}
+
+```
+- The number of threads that a kernel will execute is specified during kernel launch. 
+- The execution configuration during kernel launch is specified under triple chevron (`<<< >>>`)
+
+eg: 
+```
+__global__ void vecAdd(float* A, float* B, float* C){
+
+}
+
+int main(){
+    ...
+    // Kernel Invocation
+    vecAdd<<<1, 256>>>(A,B,C);
+    ...
+
+    // first_param = grid dimension, second_param = thread block dimension. 
+}
+```
+
+### Asynchronous Kernel Launches
+- Kernel launches are asynchronous and the host doesn't wait for the end or even start of kernel in the GPU. So, some form of synchronization is required. 
+- The most basic form being, synchronizing the entire GPU. 
+
+- When using 2 or 3 dimensional grids or thread blocks, `dim3` is used as the dimension parameter. 
+
+```
+int main(){
+    ...
+    dim3 grid(16,16);
+    dim3 block(8,8);
+    MatAdd<<<grid, block>>>(A,B,C);
+    ...
+}
+```
+
+## Thread and Grid Index Intrinsics
+1. `gridDim` : Dimension of the grid, as specified in execution configuration. 
+2. `blockDim` : Dimension of the thread block, as specified in execution configuration. 
+3. `threadIdx`: gives the index of thread, within it's thread block. Each thread in a thread block has different index. 
+4. `blockIdx` : Gives the index of the thread block within the grid. Each thread block will have a different index. 
+
+Each of these intrinsics have a `.x`, `.y` and `.z` member. Dimension not specified by launch configuration is set to 1. `threadIdx` and `blockIdx` are zero indexed. 
+- `threadIdx.x` will take values from 0 to `blockDim.x-1`. and so on for other dimensions. 
+- `blockIdx.x` will take values from 0 to `gridDim.x-1`. 
+
+
+```
+__global__ void vecAdd(float* A, float* B, float* C){
+    int workIndex = threadIdx.x + blockDim.x * blockIdx.x;
+
+    C[workIndex] = A[workIndex] + B[workIndex];
+}
+
+int main(){
+    ...
+    // A,B,C are vectors with 1024 elements. 
+    vecAdd<<<4, 256>>>(A,B,C);
+    ...
+}
+```
+
+Here, 4 blocks of 256 threads each are used to calcuate. Each calculation happens at a unique workIndex. 
