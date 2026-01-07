@@ -97,7 +97,7 @@ NVCC(NVIDIA CUDA Compiler)
 
 
 ## Cubins and Fatbins
-- C++ code is compiled to PTX which is then converted to binary code for execution whih is CUDA binary or cubin.  
+- C++ code is compiled to PTX which is then converted to binary code for execution which is CUDA binary or cubin.  
 - A cubin has specific binary format for a specific SM version eg: sm_120. 
 - GPU code is stored in fatbin. Fatbins contains cubin and PTX for multiple versions of SMs.  
 
@@ -180,3 +180,58 @@ int main(){
 ```
 
 Here, 4 blocks of 256 threads each are used to calcuate. Each calculation happens at a unique workIndex. 
+
+- **First thread block**:  blockIdx.x = 0, so => workIndex = threadIdx.x
+- **Second thread block**: blockIdx.x =1, so => workIndex = threadIdx.x + 256*1 
+- **Third thread block**:  blockIdx.x = 2, so => workIndex = threadIdx.x + 256*2 
+
+
+# Day 4
+## Bounds Checking
+The above code assumes that vector is of the dimension which is multiple of thread block size. (256 in this case)
+To make kernel handle any vector length, we add checks -> A thread block is launched with some inactive threads to resolve this. 
+
+```
+__global__ void vecAdd(float* A, float* B, float* C, int vectorLength){
+    int workIndex = threadIdx.x + blockDim.x * blockIdx.x;
+
+    if (workIndex < vectorLength){
+        <!-- Perform Computation -->
+        C[workIndex] = A[workIndex] + B[workIndex];
+    }
+}
+
+```
+
+- Launching thread block with few threads that do no work, don't incur a large overhead cost. But thread blocks where no thread performs any work must be avoided.
+
+$$
+\text{Number of thread blocks}=\frac{\text{Threads required}}{\text{Number of Threads Per Block}}$$
+Rounded to the ceiling value. 
+
+    ```
+    // vectorLength is number of items in the vector.
+    int threads = 256;
+    int blocks = (vectorLength + threads - 1)/threads;  // behaves like a ceiling function
+    vecAdd<<<blocks,threads>>>(devA, devB, devC, vectorLength);
+    ```
+
+Alternatively, this ceil division can be done by using `cuda::ceil_div` included in `<cuda/cmath>` header in `nvcc` compiler. 
+
+    ```
+    int threads = 256;
+    int blocks= cuda::ceil_div(vectorLength, threads);
+    vecAdd<<<blocks,threads>>>(devA, devB, devC, vectorLength);
+    ```
+
+
+
+## Memory in GPU Computing
+In above examples, `A`, `B`, `C` must be in memory accessible to the GPU. But how? 
+
+
+### Unified Memory
+Unified memory is a feature of cuda runtime that lets NVIDIA driver manage movement of data between host and devices. Memory is allocated using `cudaMallocManaged` API or with `__managed__` specifier. 
+
+Refer to code in `vector_add.cu`. Allocated buffers using cudaMallocManaged and buffers are released using `cudaFree`. 
+
