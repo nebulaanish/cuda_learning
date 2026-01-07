@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cuda/cmath>
+#include <chrono> 
 
 void initArray(float* arr, int n) {
     for (int i = 0; i < n; i++) {
@@ -50,19 +51,36 @@ void unifiedMemExample(int vectorLength){
     initArray(A, vectorLength);
     initArray(B, vectorLength);
 
-    // Launch kernel -> unified makes sure: A, B and C are accessible to the GPU. 
+    // --- GPU TIMING START ---
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
     int threads = 256;
     int blocks = cuda::ceil_div(vectorLength, threads);
+
+    cudaEventRecord(start); // Start recording
     vecAdd<<<blocks, threads>>>(A, B, C, vectorLength);
+    cudaEventRecord(stop);  // Stop recording
 
     // Wait for the kernel to finish execution
-    cudaDeviceSynchronize();
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    // --- GPU TIMING END ---
 
-    // Perform computation serialliy on CPU for comparison
+    auto cpu_start = std::chrono::high_resolution_clock::now();
     serialVecAdd(A, B, comparisonResult, vectorLength);
+    auto cpu_stop = std::chrono::high_resolution_clock::now();
+    
+    std::chrono::duration<double, std::milli> cpu_ms = cpu_stop - cpu_start;
 
+    // Results
+    printf("Vector Length: %d elements\n", vectorLength);
+    printf("GPU Time: %f ms\n", milliseconds);
+    printf("CPU Time: %f ms\n", cpu_ms.count());
+    printf("Speedup:  %fx\n", cpu_ms.count() / milliseconds);
 
-    // Confirm that both CPu and GPu got the answers
     if (vectorApproximatelyEqual(C, comparisonResult, vectorLength))
     {
         printf("Unified Memory: CPU and GPU answers match \n");
@@ -71,17 +89,16 @@ void unifiedMemExample(int vectorLength){
         printf("Unified Memory: Error - CPU and GPU answers don't match\n");
     }
 
-    // Cleanup
     cudaFree(A);
     cudaFree(B);
     cudaFree(C);
+    cudaEventDestroy(start); 
+    cudaEventDestroy(stop);
     free(comparisonResult);
 }
 
-
-
 int main() {
-    int vectorLength = 1 << 20;  // ~1M elements
+    int vectorLength = 1 << 28;  // Increased to ~16M for better comparison
     unifiedMemExample(vectorLength);
     return 0;
 }
