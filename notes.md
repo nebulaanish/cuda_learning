@@ -235,3 +235,84 @@ Unified memory is a feature of cuda runtime that lets NVIDIA driver manage movem
 
 Refer to code in `vector_add.cu`. Allocated buffers using cudaMallocManaged and buffers are released using `cudaFree`. 
 
+
+
+# Day 5
+### Explicit Memory management
+Eplicit memory allocation and migrations may result in better performance while being more verbose. 
+
+
+### cudaMemcpy
+Refer to `explicit_memory_mgmt.cu`
+It is a synchronous API to copy data from a buffer in CPU to GPU or vice-versa. 
+
+```
+cudaMemcpy(devA, A, vectorLength*sizeof(float), cudaMemcpyDefault); 
+// destination_pointer, source_pointer, size_in_bytes, cudaMemcpyKind_t 
+```
+`cudaMemcpy` takes 3 arguments as above. 
+`cudaMemcpyKind_t` can be either of:
+- `cudaMemcpyHostToDevice` : for copies from CPU to GPU
+- `cudaMemcpyDeviceToHost`: for copies from GPU to CPU
+- `cudaMemcpyDeviceToDevice`: for copies from GPU to CPU. 
+- `cudaMemcpyDefault`: Here, the type of copy to perform is determined by the CUDA by looking at the values of destination and source pointers. 
+
+
+
+cudaMallocHost allocates memory on the Host. It allocates page-locked memory unlike malloc or others. It is required for asynchronous copies between the CPU and GPU. 
+
+
+#### **Page Locked Memory**: 
+Pinned memory on the host. Traditional allocation techniques with `malloc`, `new`, `nmap` are not page-locked and may be swapped to disk or relocated by the OS. It also improves performance for sync copies. 
+
+CUDA allows ways to allocated new page-locked host memory or page-lock an existing host memory. 
+`cudaMallocHost`, `cudaHostAlloc`, `cudaFreeHost`, and `cudaHostRegister` are useful apis. `cudaHostRegister` page-locks a range of memory, allocated using `malloc` or `nmap`. `cudaHostRegister` also enables to page-lock memory allocated by 3rd party applications. 
+
+Good practice is to page-lock buffers which will be used for sending or receiving data from the GPU. It's generally good, but excessive usage can degrade system performance. 
+
+
+- In our above examples, each thread could execute independently without the need for synchronization. But, this is often not the case. `__syncthreads()` is an intrinsic which can be used for thread synchronization. But it only works for threads in same thread block. Shared memory is expected to be low-latency memory. Cuda programming model doesn't support synchronization between thread blocks, but Cooperative Groups provide mechanism to set synchronization domains other than a single thread block. 
+
+Best perf is achived when sync is within the same thread block.
+
+
+- Runtime Initialization: For each system, CUDA context also the primary context is initialized. Shared among all hosts threads of the application. 
+
+`cudaInitDevice` and `cudaSetDevice` initialize the runtime and primary context associated with the specified device. The runtimes uses 0 as default device. It's important when timing runtime function calls and interpreting error codes. (Before cuda 12.0, `cudaSetDevice`, didn't initalize a runtime. )
+
+
+## Error Handling
+
+- `cudaError_t` type is returned by every CUDA Api call in case of error. 
+- In case of success `cudaSuccess` is returned. 
+- Macro is used for error handling, eg: 
+```
+    CUDA_CHECK(cudaMalloc(&devA, vectorLength*sizeof(float)));
+```
+
+- For each host thread, `cudaError_t` state is maintained. 
+- `cudaGetLastError` returns current error state and resets it to `cudaSuccess`. 
+- `cudaPeekLastError` returns current error state without resetting it. 
+
+- Triple chevron(<<< >>>), doesn't check error state by default. 
+- Even a `cudaSuccess`, right after kernel launch doesn't mean succesfull kernel execution. It means, the kernel paramters and execution configuration don't trigger any errors. 
+- kernel calls are usually async. So, error states aren't updated immediately after errors are raised. State is updated only after synchronizing. 
+- setting `CUDA_LOG_FILE` enables writing of error messages encountered out to a file path. `env CUDA_LOG_FILE=cudaLog.txt ./errlog`
+- The above technique logs error, even if the CUDA doesn't check for return values, making it a powerful debugging technique. 
+- To recover from errors, a callback in case of error can be implemented by using error log management. 
+
+
+## Device and Host functions
+- `__global__` indicates entrypoint of a kernel. 
+- `__device__` indicates, a function should be compiled for the GPU. It can be called from another `__device__` function or `__global__` function. 
+
+
+## Thread Block Clusters
+- Optional, a collection of thread blocks. 
+- Max 8 thread blocks in a cluster. But can vary based on architecture. 
+- All blocks in a thread cluster are guaranteed to be co-scheduled to execute simultaneously on a single GPU Processing Cluster (GPC). 
+- `cluster.sync()` is used for synchronization. 
+- Launching with clusters in triple chevron: 
+    - Specify cluster size at compile time using ` __cluster_dims__(x, y, z)` in kernel definition. 
+    - Specify cluster size during kernel launch by using `cudaLaunchKernelEx`. 
+    - If size passed during compile time, can't be modfied during launch time. 

@@ -2,8 +2,8 @@
 NVCC = nvcc
 CCBIN = $(shell which x86_64-conda-linux-gnu-g++)
 ARCH = sm_61
-TARGET = vector_add
-SRC = vector_add.cu
+TARGET = explicit_memory_mgmt
+SRC = explicit_memory_mgmt.cu
 
 # Compilation command
 all:
