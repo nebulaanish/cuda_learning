@@ -408,3 +408,49 @@ int* array2 = (int*)&array1[64]; // skip 64 * size_of_float(4 bytes)
 
 ### Local Memory
 Physically utilize the same space as Shared global memory space. But, it's the local storage of the thread (similar to register but slower). 
+
+### Constant Memory
+- Grid scope, accessible for entire lifetime of application. Resides on device, is read-only to the kernel. 
+
+Eg:
+```cpp
+__constant__ float coeffs[4];
+
+__global__ void compute(float* out){
+    int idx = threadIdx.x;
+    out[idx] = coeffs[0] * idx + coeffs[1];
+}
+
+// In host code
+float h_coeffs[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+cudaMemcpyToSymbol(coeffs, h_coeffs, sizeof(h_coeffs));
+compute<<<1, 10>>>(device_out);
+```
+
+
+### Caches
+- L1 and L2 caches. 
+- L1 and shared memory shared same physical space located in SM. 
+- Size can be queried, and behaviour can be customized by a developer. 
+
+### Texture and Surface Memory (No real advantage of using these)
+In older CUDA code, texture and surface memory may be used as it provided better performance. 
+
+
+# Day 7
+
+### Distributed Shared memory
+- A paritioned shared memory, to share memory between threads blocks in a same thread cluster, compute capability 9.0 facilitate by Cooperative groups. 
+- Size: number of thread blocks per cluster multiplied by size of the shared memory per thread block. 
+- Accessing data from distributed shared memory requires all thread blocks to exists to, thread blocks have started executing can be determined by using `cluster.sync()`. 
+- Also, the operations on distributed shared memory should happen before exit of a thread block. 
+- Also if thead block A is trying to read B's shared memory. It must complete before B can exit. 
+
+
+#### Computation of Histogram bins: 
+- Standard way of computing histograms is to perform the computation in the shared memory of each thread block and then perform the global memory atomics. 
+- But, when the histogram bins no longer fit in the shared memory, as user needs to directly compute histograms and hence the atomics in the global memory. 
+- This slows down the compute. 
+- With Distributed shared memory, the histogram bins can be computed in shared memory, distributed shared memroy or global memory directly. 
+
+For code refer to `code/007_histogram.cu`
