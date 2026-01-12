@@ -454,3 +454,5 @@ In older CUDA code, texture and surface memory may be used as it provided better
 - With Distributed shared memory, the histogram bins can be computed in shared memory, distributed shared memroy or global memory directly. 
 
 For code refer to `code/007_histogram.cu`
+
+- Learnt by writing code for 1D convolution in cuda. 

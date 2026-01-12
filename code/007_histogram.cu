@@ -1,54 +1,66 @@
-#include <cooperative_groups.h>
+#include <cuda_runtime.h>
+#include <stdio.h>
 
-__global__ void clusterHistogram(int* bins, cons int nbins, const int bins_per_block, const int *__restrict__ input, size_t array_size){
+#define CUDA_CHECK(x) do { cudaError_t err = (x); \
+    if (err != cudaSuccess) { printf("CUDA Error: %s\n", cudaGetErrorString(err)); return -1; }} while (0)
 
-    extern __shared__ int smem[];
-    namespace cg = cooperative_groups;
-    int tid = cg::this_grid().thread_rank();
+__global__ void histogram_kernel(const int *input, int *hist, int array_size, int nbins)
+{
+    extern __shared__ int s_hist[];
+    for (int i = threadIdx.x; i < nbins; i += blockDim.x)
+        s_hist[i] = 0;
 
-    // Initialize cluster, size and calculate local bin offsets. 
-    cg::cluster_group cluster = cg::this_cluster();
-    unsigned int clusterBlockRank = cluster.block_rank();
-    int cluster_size = cluster.dim_blocks().x;
+    __syncthreads();
 
-    for (int i=threadIdx.x; i< bins_per_block; i+=blockDim.x){
-        smem[i] = 0; // initializes shared memory histogram to zeros. 
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    while (idx < array_size) {
+        int val = input[idx];
+        if (val >= 0 && val < nbins)
+            atomicAdd(&s_hist[val], 1);
+        idx += stride;
     }
 
-    // cluster synchronization ensures that shared memory is intialized to zero in all
-    // thread blocks in the cluster. It also ensures that all thread blocks have 
-    // started executing and they exist concurrently.
-    cluster.sync();
+    __syncthreads();
 
-    for (int i = tid; i < array_size; i += blockDim.x * gridDim.x)
-    {
-        int ldata = input[i];
-
-        // find the right histogram bin
-        int binid = ldata;
-        if (ldata<0)
-            binid = 0;
-        else if (ldata>=nbins)
-            binid = nbins -1;
-
-        // Find destination block rank and offset for computing DSM histogram
-        int dst_block_rank = (int)(binid/bins_per_block);
-        int dst_offset = binid % bins_per_block;
-
-        // Pointer to target block shared memory
-        int *dst_smem = cluster.map_shared_rank(smem, dst_block_rank);
-
-        // Perform atomic update of the histogram bin
-        atomicAdd(dst_smem + dst_offset, 1);
-    }
-
-    cluster.sync(); // Why required? research further.
-
-    int *lbins = bins + cluster.block_rank() * bins_per_block;
-    for (int i = threadIdx.x; i < bins_per_block; i+= blockDim.x)
-    {
-        atomicAdd(&lbins[i], smem[i]);
-    }
-
+    for (int i = threadIdx.x; i < nbins; i += blockDim.x)
+        atomicAdd(&hist[i], s_hist[i]);
 }
 
+int main()
+{
+    const int array_size = 1 << 20;
+    const int nbins = 256;
+    const int threads = 256;
+    const int blocks = 256;
+
+    int *h_input = new int[array_size];
+    int *h_hist  = new int[nbins];
+
+    for (int i = 0; i < array_size; i++)
+        h_input[i] = rand() % nbins;
+
+    int *d_input, *d_hist;
+    CUDA_CHECK(cudaMalloc(&d_input, array_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_hist,  nbins      * sizeof(int)));
+
+    CUDA_CHECK(cudaMemcpy(d_input, h_input, array_size * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_hist, 0,            nbins      * sizeof(int)));
+
+    histogram_kernel<<<blocks, threads, nbins * sizeof(int)>>>(
+        d_input, d_hist, array_size, nbins);
+
+    CUDA_CHECK(cudaMemcpy(h_hist, d_hist, nbins * sizeof(int), cudaMemcpyDeviceToHost));
+
+    for (int i = 0; i < 10; i++)
+        printf("bin[%d] = %d\n", i, h_hist[i]);
+
+
+    cudaFree(d_input);
+    cudaFree(d_hist);
+    delete[] h_input;
+    delete[] h_hist;
+
+    return 0;
+}
