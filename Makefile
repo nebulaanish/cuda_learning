@@ -1,9 +1,9 @@
 # Variables
 NVCC = nvcc
 CCBIN = $(shell which x86_64-conda-linux-gnu-g++)
-ARCH = sm_61
-TARGET = explicit_memory_mgmt
-SRC = explicit_memory_mgmt.cu
+ARCH = sm_90
+TARGET = builds/histogram
+SRC = code/007_histogram.cu
 
 # Compilation command
 all:
