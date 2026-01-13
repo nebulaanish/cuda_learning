@@ -507,3 +507,12 @@ Thread 1 -> (row2, col1)
 The memory can be fetched in single DRAM burst or a single memory transaction. 
 
 ### Bank Conflicts ... 
+- Shared memory is split into 32 banks where each bank may include multiple memory addresses. Warps have same number of threads.  
+- Each all 32 threads, access different banks, then speed is fast. 
+- Otherwise, it's slow. 
+Eg: 32 customers, 32 cashiers. If all 32 customers, go to different cashiers, each one of them get's their work done fast. While, in other cases, 1 cashier may have to serve multiple customers. Resulting in bank conflict, slowing down performance. 
+
+- **Broadcast**: If, multiple threads read the same address, GPU uses broadcast, so no conflict occurs. 
+
+- **Example to study further**: Use of row padding in matrix transpose, to present bank conflict. 
+
