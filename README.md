@@ -516,3 +516,7 @@ Eg: 32 customers, 32 cashiers. If all 32 customers, go to different cashiers, ea
 
 - **Example to study further**: Use of row padding in matrix transpose, to present bank conflict. 
 
+====================================
+- Write relu code: `code/009_relu.cu`. 
+- Write vector addition: `code/009_vec_add.cu`. 
+- Write matrix multiplication: `code/009_mat_mul.cu`. 
