@@ -483,4 +483,27 @@ Is this achieving coalesced global memory access??
     - As, ld increases by 1, memory location increments by `ld`. When `ld` is larger than 32, the worst case scenario is observed.  
 
 
+# Day 9
+Example of coalesced memory access in Matrix multiplication: 
+- Let's assume two 4x4 matrices (a and b). Then, it's values are stored in row-major form. 
+- i.e like so: `a11, a12, a13, a14 | a21, a22, a23, a24 | a31, a32, a33, a34 | a41, a42, a43, a44 (same for b)`
+- During multiplication: If we do: 
+    row * column, then 
+- `c11 = a11*b11 + a12*b21 + a13*b31 + a14*b41`
+- `c12 = a11*b12 + a12*b22 + a13*b32 + a14*b42`
+and so on
+-  The threads are assigned in following way: 
+```
+Thread 0 -> C(row1, col1) -> asks for a11 which is in memory index 0 and b11(in index 0)
+Thread 1 -> C(row2, col2) -> asks for a21 which is in memory index 4 and b11(in index 4)
+```
+Which is not coalesced.
+
+But, if we flip that and assign threads in following pattern. <br>
+```
+Thread 0 -> (row1, col1)
+Thread 1 -> (row2, col1)
+```
+The memory can be fetched in single DRAM burst or a single memory transaction. 
+
 ### Bank Conflicts ... 
